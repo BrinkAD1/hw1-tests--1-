@@ -1,0 +1,6 @@
+{
+    "files.associations": {
+        "machine_types.h": "c",
+        "instruction.h": "c"
+    }
+}
