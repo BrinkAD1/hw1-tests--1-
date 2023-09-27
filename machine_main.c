@@ -17,16 +17,9 @@ static union mem_u {
      bin_instr_t instrs[MEMORY_SIZE_IN_WORDS];
 } memory;
 
-void disasmTextSection(BOFFILE bf, BOFHeader bh)
-{
-    printf(".text %u\n", bh.text_start_address);
-    printf(".text %u\n", bh.text_length); 
-}
-
-
 void InstrPrint(bin_instr_t bi, unsigned int i)
 {
-    printf("%d:\t%s", i, instruction_assembly_form(bi));
+    printf("   %d %s", i, instruction_assembly_form(bi));
     printf("\n");
 }
 
@@ -34,6 +27,9 @@ void InstrPrint(bin_instr_t bi, unsigned int i)
 int main(int argc, char *argv[]) 
 {
     word_type register_array[32];
+   
+    // [0] = PC, [1] = HI, [2] = LO
+    word_type special_register_array[3] = {0,0,0};
 
     //initialize register array to 0
     for(int i =0; i < 32; i ++ )
@@ -41,8 +37,6 @@ int main(int argc, char *argv[])
         register_array[i] = 0;
     }
 
-    //initialize PC to 0
-    int PC = 0;
     //default tracing is off
     int trace = 1;                
 
@@ -53,7 +47,7 @@ int main(int argc, char *argv[])
 
         BOFHeader boffile_header = bof_read_header(boffile);
 
-        int length = boffile_header.text_length / BYTES_PER_WORD;
+        int length = boffile_header.text_length / BYTES_PER_WORD; 
 
         printf("Addr Instruction\n");
         for(int i = 0; i < length; i++)
@@ -61,7 +55,7 @@ int main(int argc, char *argv[])
             InstrPrint( instruction_read(boffile), i*BYTES_PER_WORD);
         }
 
-        printf("\t%u\n", boffile_header.data_start_address);
+        printf("    %u:\n", boffile_header.data_start_address);
     }
 
     if(argc == 2)
@@ -75,7 +69,7 @@ int main(int argc, char *argv[])
         {
             if(trace)
             {
-                printf("PC: %d", PC);
+                printf("PC: %d", special_register_array[0]);
                 for(int i =0; i < 32; i ++ )
                 {
                     
@@ -96,8 +90,8 @@ int main(int argc, char *argv[])
                 
 
                 case(reg_instr_type):
-                    printf("reg_instr_type\n");
-                    printf("reg.func: %u reg.rd: %u reg.rs %u reg.rt: %u reg.shift: %u\n",bi.reg.func, bi.reg.rd, bi.reg.rs, bi.reg.rt, bi.reg.shift);
+                    //printf("reg_instr_type\n");
+                    //printf("reg.func: %u reg.rd: %u reg.rs %u reg.rt: %u reg.shift: %u\n",bi.reg.func, bi.reg.rd, bi.reg.rs, bi.reg.rt, bi.reg.shift);
                     switch(bi.reg.func)
                     {
                         case(ADD_F):
@@ -107,12 +101,26 @@ int main(int argc, char *argv[])
                             register_array[bi.reg.rd] = register_array[bi.reg.rs] - register_array[bi.reg.rt];
                             break;
                         case(MUL_F):
+                            unsigned int result = register_array[bi.reg.rs] * register_array[bi.reg.rt];
+                            // Put LSB into LO
+                            unsigned int lsb_mask = (1u << 16) - 1; // Create a mask with 16 LSBs
+                            unsigned int lsbs = result & lsb_mask; // Use bitwise AND to extract the LSBs
+                            special_register_array[2] = lsbs;
+
+                            //PUT MSB into HI
+                            unsigned int msb_mask = result & (~0u << 16); // Create a mask with 16 MSBs
+                            unsigned int msbs = result & msb_mask; // Use bitwise AND to extract the MSBs
+                            msbs >>= 16; // Right-shift to remove the lower 16 bits
+                            special_register_array[1] = msbs;
+
                             break;
                         case(DIV_F):
                             break;
                         case(MFHI_F):
+                            register_array[bi.reg.r] = special_register_array[1];
                             break;
                         case(MFLO_F):
+                            register_array[bi.reg.rd] = special_register_array[2];
                             break;
                         case(AND_F):
                             register_array[bi.reg.rd] = register_array[bi.reg.rs] & register_array[bi.reg.rt];
@@ -170,16 +178,17 @@ int main(int argc, char *argv[])
                     printf("op: %u rs: %u rt: %u\n",bi.immed.op, bi.immed.rs, bi.immed.rt);
                     switch(bi.immed.op)
                     {
-                        case(REG_O):
-                            break;
                         case(ADDI_O):
-                            register_array[bi.immed.rt] = bi.immed.immed + register_array[bi.immed.rs];
+                            register_array[bi.immed.rt] =  register_array[bi.immed.rs] + machine_types_sgnExt(bi.immed.immed);
                             break;
                         case(ANDI_O):
+                            register_array[bi.immed.rt] = register_array[bi.immed.rs] & machine_types_zeroExt(bi.immed.immed);
                             break;
                         case(BORI_O):
+                            register_array[bi.immed.rt] = register_array[bi.immed.rs] | machine_types_zeroExt(bi.immed.immed);
                             break;
                         case(XORI_O):
+                            register_array[bi.immed.rt] = register_array[bi.immed.rs] ^ machine_types_zeroExt(bi.immed.immed);
                             break;
                         case(BEQ_O):
                             break;
@@ -194,6 +203,7 @@ int main(int argc, char *argv[])
                         case(BNE_O):
                             break;
                         case(LBU_O):
+                            
                             break;
                         case(LW_O):
                             break;
@@ -201,23 +211,25 @@ int main(int argc, char *argv[])
                             break;
                         case(SW_O):
                             break;
+                    }
+                    break;
+                case(jump_instr_type):
+
+                    switch(bi.jump.op)
+                    {
                         case(JMP_O):
                             break;
                         case(JAL_O):
                             break;
                     }
                     break;
-                case(jump_instr_type):
-                    printf("jump_inst_type\n");
-                    break;
                 case(error_instr_type):
                     return 1;
                     break;
             }
-            
-            
+
             //increment PC for next instruction
-            PC = PC + 4;     
+            special_register_array[0] += 4;     
         }
     }  
 }
