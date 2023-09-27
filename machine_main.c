@@ -50,16 +50,25 @@ int main(int argc, char *argv[])
 
         int length = boffile_header.text_length / BYTES_PER_WORD;
         int data_length = boffile_header.data_length / BYTES_PER_WORD;
-
-        printf("DATA LENGTh = %d", data_length); 
+        int data_address = boffile_header.data_start_address;
+               
 
         printf("Addr Instruction\n");
         for(int i = 0; i < length; i++)
         {
             InstrPrint( instruction_read(boffile), i*BYTES_PER_WORD);
         }
+        for(int i =0; i < data_length; i++)
+        {
+            word_type word = bof_read_word(boffile);
+            printf("    %u: %d\t", data_address, word);
+            data_address +=  BYTES_PER_WORD;
+            
+        }
 
-        printf("    %u:\n", boffile_header.data_start_address);
+        printf("%u: 0 ...\n", data_address);
+
+        
     }
 
     if(argc == 2)
