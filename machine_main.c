@@ -17,6 +17,7 @@ static union mem_u {
      bin_instr_t instrs[MEMORY_SIZE_IN_WORDS];
 } memory;
 
+
 void InstrPrint(bin_instr_t bi, unsigned int i)
 {
     printf("   %d %s", i, instruction_assembly_form(bi));
@@ -47,7 +48,10 @@ int main(int argc, char *argv[])
 
         BOFHeader boffile_header = bof_read_header(boffile);
 
-        int length = boffile_header.text_length / BYTES_PER_WORD; 
+        int length = boffile_header.text_length / BYTES_PER_WORD;
+        int data_length = boffile_header.data_length / BYTES_PER_WORD;
+
+        printf("DATA LENGTh = %d", data_length); 
 
         printf("Addr Instruction\n");
         for(int i = 0; i < length; i++)
@@ -85,6 +89,10 @@ int main(int argc, char *argv[])
             if(trace)
             {
                 printf("PC: %d", special_register_array[0]);
+                if( special_register_array[1] != 0 || special_register_array[2] !=0)
+                {
+                    printf("HI: %u   LO: %u", special_register_array[1], special_register_array[2]);
+                }
                 for(int i =0; i < 32; i ++ )
                 {
                     
@@ -95,11 +103,8 @@ int main(int argc, char *argv[])
                 }
                 printf("\n");
                 printf("==> addr:   ");
-                
                 InstrPrint( bi, i*BYTES_PER_WORD);
             }
-            
-            
 
             switch(instr)
             {              
@@ -129,7 +134,9 @@ int main(int argc, char *argv[])
 
                             break;
                         case(DIV_F):
+                            //HI register
                             special_register_array[1] = register_array[bi.reg.rs] % register_array[bi.reg.rt];
+                            //LO register
                             special_register_array[2] = register_array[bi.reg.rs] / register_array[bi.reg.rt];
                             break;
                         case(MFHI_F):
@@ -157,6 +164,8 @@ int main(int argc, char *argv[])
                             register_array[bi.reg.rd] = register_array[bi.reg.rt] >> bi.reg.shift;
                             break;
                         case(JR_F):
+                            //Jump Register: PC ← GPR[s]
+                            special_register_array[0] = special_register_array[0] + register_array[bi.reg.rs];
                             break;
                         case(SYSCALL_F):
                             break;
@@ -171,20 +180,23 @@ int main(int argc, char *argv[])
                             exit(0);
                             break;
                         case(print_str_sc):
-                            printf("print_str_sc\n");
+                            //GPR[$v0] ← printf("%s",&memory[GPR[$a0]])
+                            //register_array[2] = printf("%s",&memory.instrs[register_array[4]]); //TODO : IDK IF &memory.instr is correct
                             break;
                         case(print_char_sc):
-                            printf("print char sc\n");
+                            //GPR[$v0] ←fputc(GPR[$a0],stdout)
+                            register_array[2] = fputc(register_array[4],stdout);
                             break;
                         case(read_char_sc):
-                            printf("read char sc\n");
+                            //GPR[$v0] ← getc(stdin)
+                            register_array[4] = getc(stdin);
                             break;
                         case(start_tracing_sc):
-                            //printf("start tracing sc\n");
+                            //start tracing output
                             trace = 1;
                             break;
                         case(stop_tracing_sc):
-                            //printf("stop char sc\n");
+                            //stop tracing output
                             trace = 0;
                             break;
                     }
@@ -207,25 +219,63 @@ int main(int argc, char *argv[])
                             register_array[bi.immed.rt] = register_array[bi.immed.rs] ^ machine_types_zeroExt(bi.immed.immed);
                             break;
                         case(BEQ_O):
+                            //Branch on Equal: if GPR[s] = GPR[t] then PC ← PC + formOffset(o)
+                            if(register_array[bi.immed.rs] == register_array[bi.immed.rt])
+                            {
+                                special_register_array[0] = special_register_array[0] + machine_types_formOffset(bi.immed.immed);
+                            }
                             break;
                         case(BGEZ_O):
+                            // Branch ≥ 0: if GPR[s] ≥ 0 then PC ← PC + formOffset(o)
+                            if(register_array[bi.immed.rs] >= 0)
+                            {
+                                special_register_array[0] = special_register_array[0] + machine_types_formOffset(bi.immed.immed);
+                            }
                             break;
                         case(BGTZ_O):
+                            //Branch > 0: if GPR[s] > 0 then PC ← PC + formOffset(o)
+                            if(register_array[bi.immed.rs] > 0)
+                            {
+                                special_register_array[0] = special_register_array[0] + machine_types_formOffset(bi.immed.immed);
+                            }
                             break;
                         case(BLEZ_O):
+                            //Branch ≤ 0: if GPR[s] ≤ 0 then PC ← PC + formOffset(o)
+                            if(register_array[bi.immed.rs] <= 0)
+                            {
+                                special_register_array[0] = special_register_array[0] + machine_types_formOffset(bi.immed.immed);
+                            }
                             break;
                         case(BLTZ_O):
+                            //Branch < 0: if GPR[s] < 0 then PC ← PC + formOffset(o)
+                            if(register_array[bi.immed.rs] < 0)
+                            {
+                                special_register_array[0] = special_register_array[0] + machine_types_formOffset(bi.immed.immed);
+                            }
                             break;
                         case(BNE_O):
+                            // Branch Not Equal: if GPR[s] ̸= GPR[t] then PC ← PC + formOffset(o)
+                            if(register_array[bi.immed.rs] != register_array[bi.immed.rt])
+                            {
+                                special_register_array[0] = special_register_array[0] + machine_types_formOffset(bi.immed.immed);
+                            }
                             break;
                         case(LBU_O):
-                            
+                            //Load Byte Unsigned: GPR[t] ← zeroExt(memory[GPR[b] + formOffset(o)])
+                            //TODO: FIX MEMORY.INSTRC to correct
+                            //register_array[bi.immed.rt] = machine_types_zeroExt(memory.instrs[bi.immed.rs] + machine_types_formOffset(bi.immed.immed));
                             break;
                         case(LW_O):
+                            //GPR[t] ← memory[GPR[b] + formOffset(o)]
+                            //TO DO: FIX THIS MEMORY
+                            //register_array[bi.immed.rt] = memory.words[register_array[bi.immed.rs] + machine_types_formOffset(bi.immed.immed)];
                             break;
                         case(SB_O):
+                            //Store Byte (least significant byte of GPR[t]): memory[GPR[b] + formOffset(o)] ← GPR[t]
+
                             break;
                         case(SW_O):
+                            //Store Word (4 bytes): memory[GPR[b] + formOffset(o)] ← GPR[t]
                             break;
                     }
                     break;
@@ -234,8 +284,13 @@ int main(int argc, char *argv[])
                     switch(bi.jump.op)
                     {
                         case(JMP_O):
+                            //Jump: PC ← formAddress(P C, a)
+                            special_register_array[0] = machine_types_formAddress(special_register_array[0],bi.jump.addr);
                             break;
                         case(JAL_O):
+                            //Jump and Link: GPR[$ra] ← PC; PC ← formAddress(PC, a)
+                            register_array[31] = special_register_array[0];
+                            special_register_array[0] = machine_types_formAddress(special_register_array[0], bi.jump.addr);
                             break;
                     }
                     break;
