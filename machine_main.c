@@ -60,6 +60,9 @@ int main(int argc, char *argv[])
         }
         for(int i =0; i < data_length; i++)
         {
+            if(i % 5 == 0)
+                printf("\n");
+
             word_type word = bof_read_word(boffile);
             printf("    %u: %d\t", data_address, word);
             data_address +=  BYTES_PER_WORD;
