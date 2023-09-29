@@ -20,8 +20,8 @@ static union mem_u {
 
 void InstrPrint(bin_instr_t bi, unsigned int i)
 {
-    printf("   %d %s", i, instruction_assembly_form(bi));
-    printf("\n");
+    fprintf(stdout, "   %d %s", i, instruction_assembly_form(bi));
+    fprintf(stdout, "\n");
 }
 
 
@@ -54,7 +54,7 @@ int main(int argc, char *argv[])
         int word_address = boffile_header.data_start_address;
                
 
-        printf("Addr Instruction\n");
+        fprintf(stdout, "Addr Instruction\n");
         for(int i = 0; i < length; i++)
         {
             InstrPrint( instruction_read(boffile), i*BYTES_PER_WORD);
@@ -62,14 +62,14 @@ int main(int argc, char *argv[])
         for(int i =0; i < word_length; i++)
         {
             if(i % 5 == 0)
-                printf("\n");
+                fprintf(stdout, "\n");
 
             word_type word = bof_read_word(boffile);
-            printf("    %u: %d\t", word_address, word);
+            fprintf(stdout, "    %u: %d\t", word_address, word);
             word_address +=  BYTES_PER_WORD;
             
         }
-        printf("%u: 0 ...\n", word_address);        
+        fprintf(stdout, "%u: 0 ...\n", word_address);        
     }
 
     if(argc == 2)
@@ -102,6 +102,8 @@ int main(int argc, char *argv[])
         //start address for words in memory
         int word_address =  boffile_header.data_start_address;
 
+        
+
         //load memory with the instructions
         //int instruction_index = 0;
         for(int i =0; i < instruction_length ; i++)
@@ -125,36 +127,51 @@ int main(int argc, char *argv[])
 
             if(trace)
             {
-                printf("      PC: %d\t", SPR[0]);
+                fprintf(stdout, "      PC: %d\t", SPR[0]);
                 if( SPR[1] != 0 || SPR[2] !=0)
                 {
-                    printf("HI: %u\tLO: %u", SPR[1], SPR[2]);
+                    fprintf(stdout, "HI: %u\tLO: %u", SPR[1], SPR[2]);
                 }
                 for(int i =0; i < 32; i ++ )
                 {
                     
                     if(i % 6 ==0)
-                        printf("\n");
+                        fprintf(stdout, "\n");
                         
-                    printf("GPR[%s]: %d   ", regname_get(i), GPR[i]);
+                    fprintf(stdout, "GPR[%s]: %d   ", regname_get(i), GPR[i]);
                 }
-                printf("\n");
+                fprintf(stdout, "\n");
                 if(word_length > 0)
                 {   
                     int i =0;
-                    while(i < word_length)
+                    while(memory.words[word_address + (i * BYTES_PER_WORD)] != 0)
                     {
-                        printf("\t%d:   %d   ", (word_address + (i * BYTES_PER_WORD)), memory.words[word_address + (i * BYTES_PER_WORD)]);
+                        fprintf(stdout, "\t%d:   %d   ", (word_address + (i * BYTES_PER_WORD)), memory.words[word_address + (i * BYTES_PER_WORD)]);
                         i++;
+                        if(i % 5 == 0 ){fprintf(stdout,"\n");}
                     }
-                    printf("%d:   0...   \n", word_address+ (i * BYTES_PER_WORD));
+                    fprintf(stdout, "%d:   0...   \n", word_address+ (i * BYTES_PER_WORD));
                 }
                 else
                 {
-                    printf("\t%d:   0...   \n", word_address);
+                    fprintf(stdout, "\t%d:   0...   \n", word_address);
                 }
-                printf("\t%d: 0 ...\n", GPR[29]);
-                printf("==> addr:   ");
+                int sp_value = GPR[29];
+                int i =0;
+                while(sp_value <= GPR[30])
+                {   
+                    fprintf(stdout, "   %d: %d", sp_value, memory.words[sp_value]);
+
+                    if(sp_value == GPR[30])
+                    {
+                        fprintf(stdout, "...");
+                    }
+                    sp_value = sp_value +4;
+                    i++;
+                    if(i % 5 == 0 ){fprintf(stdout,"\n");}
+                }
+                fprintf(stdout, "\n");
+                fprintf(stdout, "==> addr:   ");
                 InstrPrint( bi, SPR[0]);
             }   
             //Increment PC by BYTES_PER_WORD
@@ -220,16 +237,14 @@ int main(int argc, char *argv[])
                     }
                     break;
                 case(syscall_instr_type):
-                    //printf("syscall_instr_type\n");
-                    //printf("code: %u func: %u op: %u\n", bi.syscall.code, bi.syscall.func, bi.syscall.op);
                     switch(bi.syscall.code)
                     {
                         case(exit_sc):
                             exit(0);
                             break;
                         case(print_str_sc):
-                            //GPR[$v0] ← printf("%s",&memory[GPR[$a0]])
-                            GPR[2] = printf("%s",memory.bytes[GPR[4]]); //TODO : IDK IF &memory.instr is correct
+                            //GPR[$v0] ← fprintf(stdout, "%s",&memory[GPR[$a0]])
+                            GPR[2] = fprintf(stdout, "%s",memory.bytes[GPR[4]]);
                             break;
                         case(print_char_sc):
                             //GPR[$v0] ←fputc(GPR[$a0],stdout)
@@ -250,8 +265,6 @@ int main(int argc, char *argv[])
                     }
                     break;
                 case(immed_instr_type):
-                    //printf("immed_inst_type\n");
-                    //printf("op: %u rs: %u rt: %u\n",bi.immed.op, bi.immed.rs, bi.immed.rt);
                     switch(bi.immed.op)
                     {
                         case(ADDI_O):
@@ -310,12 +323,10 @@ int main(int argc, char *argv[])
                             break;
                         case(LBU_O):
                             //Load Byte Unsigned: GPR[t] ← zeroExt(memory[GPR[b] + formOffset(o)])
-                            //TODO: FIX MEMORY.INSTRC to correct
-                            GPR[bi.immed.rt] = machine_types_zeroExt(memory.bytes[bi.immed.rs * 9] + machine_types_formOffset(bi.immed.immed));
+                            GPR[bi.immed.rt] = machine_types_zeroExt(memory.words[GPR[bi.immed.rs] + machine_types_formOffset(bi.immed.immed)]);                          
                             break;
                         case(LW_O):
                             //GPR[t] ← memory[GPR[b] + formOffset(o)]
-                            //TO DO: FIX THIS MEMORY
                             GPR[bi.immed.rt] = memory.words[GPR[bi.immed.rs] + machine_types_formOffset(bi.immed.immed)];
                             break;
                         case(SB_O):
@@ -324,7 +335,9 @@ int main(int argc, char *argv[])
                             break;
                         case(SW_O):
                             //Store Word (4 bytes): memory[GPR[b] + formOffset(o)] ← GPR[t]
-                            memory.words[GPR[bi.immed.rs] + machine_types_formOffset(bi.immed.immed)] = GPR[bi.immed.rt]; 
+                            memory.words[GPR[bi.immed.rs] + machine_types_formOffset(bi.immed.immed)] = GPR[bi.immed.rt];
+
+                            //fprintf(stdout, "target memory.words[%d] value: %u ", GPR[bi.immed.rs] + machine_types_formOffset(bi.immed.immed), GPR[bi.immed.rt]);
                             break;
                     }
                     break;
