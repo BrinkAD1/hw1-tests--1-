@@ -65,6 +65,7 @@ int main(int argc, char *argv[])
                 fprintf(stdout, "\n");
 
             word_type word = bof_read_word(boffile);
+
             fprintf(stdout, "    %u: %d\t", word_address, word);
             word_address +=  BYTES_PER_WORD;
             
@@ -105,7 +106,6 @@ int main(int argc, char *argv[])
         
 
         //load memory with the instructions
-        //int instruction_index = 0;
         for(int i =0; i < instruction_length ; i++)
         {
             memory.instrs[instruction_index] = instruction_read(boffile_mem);
@@ -121,9 +121,20 @@ int main(int argc, char *argv[])
         {               
 
             bin_instr_t bi = memory.instrs[SPR[0]];
-            instr_type instr = instruction_type(bi);
+            instr_type instr = instruction_type(bi);     
 
-            //increment PC for next instruction            
+            //Assert the Invariants
+            assert(SPR[0] % BYTES_PER_WORD == 0);
+            assert(GPR[28] % BYTES_PER_WORD == 0);
+            assert(GPR[29] % BYTES_PER_WORD == 0);
+            assert(GPR[30] % BYTES_PER_WORD == 0);
+            assert(0 <= GPR[28]);
+            assert(GPR[28] < GPR[29]);
+            assert(GPR[29] <= GPR[30]);
+            assert(GPR[30] <= MEMORY_SIZE_IN_BYTES);
+            assert(0 <= SPR[0]);
+            assert(SPR[0] < MEMORY_SIZE_IN_BYTES);
+            assert(GPR[0] == 0);
 
             if(trace)
             {
@@ -141,6 +152,7 @@ int main(int argc, char *argv[])
                     fprintf(stdout, "GPR[%s]: %d   ", regname_get(i), GPR[i]);
                 }
                 fprintf(stdout, "\n");
+                //prints words loaded from word section in boffile
                 if(word_length > 0)
                 {   
                     int i =0;
@@ -150,23 +162,32 @@ int main(int argc, char *argv[])
                         i++;
                         if(i % 5 == 0 ){fprintf(stdout,"\n");}
                     }
-                    fprintf(stdout, "%d:   0...   \n", word_address+ (i * BYTES_PER_WORD));
+                    fprintf(stdout, "%d:   0 ...   \n", word_address+ (i * BYTES_PER_WORD));
                 }
                 else
                 {
-                    fprintf(stdout, "\t%d:   0...   \n", word_address);
+                    fprintf(stdout, "\t%d: 0   ...   \n", word_address);
                 }
                 int sp_value = GPR[29];
                 int i =0;
                 while(sp_value <= GPR[30])
                 {   
-                    fprintf(stdout, "   %d: %d", sp_value, memory.words[sp_value]);
+                    if(memory.words[sp_value] == 0)
+                    {   
+                        //print 0 
+                        fprintf(stdout, "   %d: %d", sp_value, memory.words[sp_value]);
+                        fprintf(stdout, " ...");
 
-                    if(sp_value == GPR[30])
-                    {
-                        fprintf(stdout, "...");
+                        while(memory.words[sp_value] == 0 && sp_value <= GPR[30])
+                        {
+                            sp_value += 4;
+                        }
                     }
-                    sp_value = sp_value +4;
+                    else
+                    {
+                        fprintf(stdout, "   %d: %d", sp_value, memory.words[sp_value]);
+                        sp_value = sp_value +4;
+                    }
                     i++;
                     if(i % 5 == 0 ){fprintf(stdout,"\n");}
                 }
@@ -191,11 +212,28 @@ int main(int argc, char *argv[])
                             break;
                         case(MUL_F):
                             unsigned long int result = GPR[bi.reg.rs] * GPR[bi.reg.rt];
+
+                            int num_bits = sizeof(unsigned long int) * 8;
+
+                            unsigned long int HI, LO;
+                            // Number of bits for LO (LSBs)
+                            int LO_bits = num_bits / 2;
+
+                            // Mask for HI (MSBs)
+                            unsigned long int HI_mask = ~0UL << LO_bits;
+
+                            // Mask for LO (LSBs)
+                            unsigned long int LO_mask = ~HI_mask;
+
+                            // Extract the MSBs and LSBs
+                            HI = (result & HI_mask) >> LO_bits;
+                            LO = result & LO_mask;
+
                             // Put LSB into LO
-                            SPR[2] = result;
+                            SPR[2] = LO;
 
                             //PUT MSB into HI
-                            SPR[1] = 0;
+                            SPR[1] = HI;
 
                             break;
                         case(DIV_F):
@@ -244,7 +282,12 @@ int main(int argc, char *argv[])
                             break;
                         case(print_str_sc):
                             //GPR[$v0] ← fprintf(stdout, "%s",&memory[GPR[$a0]])
-                            GPR[2] = fprintf(stdout, "%s",memory.bytes[GPR[4]]);
+                            //Convert int to string
+                            char strValue[64]; 
+                            sprintf(strValue, "%d", memory.bytes[GPR[4]]);
+
+                            //print the value as a string
+                            GPR[2] = fprintf(stdout, "%s", strValue);
                             break;
                         case(print_char_sc):
                             //GPR[$v0] ←fputc(GPR[$a0],stdout)
@@ -286,7 +329,7 @@ int main(int argc, char *argv[])
                                 SPR[0] = SPR[0] + machine_types_formOffset(bi.immed.immed);
                             }
                             break;
-                        case(BGEZ_O):
+                        case(BGEZ_O ):
                             // Branch ≥ 0: if GPR[s] ≥ 0 then PC ← PC + formOffset(o)
                             if(GPR[bi.immed.rs] >= 0)
                             {
@@ -336,8 +379,6 @@ int main(int argc, char *argv[])
                         case(SW_O):
                             //Store Word (4 bytes): memory[GPR[b] + formOffset(o)] ← GPR[t]
                             memory.words[GPR[bi.immed.rs] + machine_types_formOffset(bi.immed.immed)] = GPR[bi.immed.rt];
-
-                            //fprintf(stdout, "target memory.words[%d] value: %u ", GPR[bi.immed.rs] + machine_types_formOffset(bi.immed.immed), GPR[bi.immed.rt]);
                             break;
                     }
                     break;
